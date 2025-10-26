@@ -2,7 +2,9 @@
 
 This was a project ti integrate my dog door with my home automation system.  
 
-[[ INSERT DEMO VIDEO ]]
+
+https://github.com/user-attachments/assets/04db9c3c-1672-4850-8f80-c61b44e2538a
+
 
 There is nothing complex going on here, this integrates with MQTT just as a window shade does.
 
