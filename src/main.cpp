@@ -6,7 +6,7 @@
 struct Action
 {
   int direction;
-  int duration; // ms to run
+  unsigned long duration; // ms to run, or 0 to run until the limit switch
   int power;
 };
 
@@ -21,6 +21,10 @@ const unsigned long BUTTON_DEBOUNCE_MS = 50;
 #define OPEN_DIRECTION LOW
 #define CLOSE_DIRECTION HIGH
 
+// Closing unwinds the string and lets the door drop; there is no closed
+// limit switch, so the close runs for a fixed time.
+const unsigned long CLOSE_RUN_MS = 4250;
+
 // Network timing. The WiFi and MQTT libraries block while they try to connect,
 // so keep each attempt short and space them out. The button is polled between
 // attempts, and no attempt is made while the motor is running.
@@ -29,7 +33,8 @@ const unsigned long WIFI_JOIN_TIMEOUT_MS = 3000;   // max time WiFi.begin may bl
 const unsigned long WIFI_RETRY_INTERVAL_MS = 30000;
 const unsigned long MQTT_RETRY_INTERVAL_MS = 30000;
 
-unsigned long stopMotorAt = 0;
+unsigned long motorStartedAt = 0;
+unsigned long motorRunFor = 0; // 0 = run until the limit switch
 unsigned long lastWifiAttemptAt = 0;
 unsigned long lastMqttAttemptAt = 0;
 bool wifiWasConnected = false;
@@ -99,21 +104,14 @@ void setMotor(Action *a)
   motorDirection = a->direction;
 
   digitalWrite(DIRECTION_PIN, motorDirection);
+  motorStartedAt = millis();
+  motorRunFor = a->duration;
   setMotorPower(a->power);
-
-  if (a->duration > 0)
-  {
-    stopMotorAt = millis() + a->duration * 50; // scales to allow for up to 10s
-  }
-  else
-  {
-    stopMotorAt = 0;
-  }
 }
 
 void stop()
 {
-  stopMotorAt = 0;
+  motorRunFor = 0;
   setMotorPower(0);
   cover.setState(HACover::StateStopped);
 }
@@ -123,7 +121,6 @@ void onLimitOpen()
   if (motorDirection == OPEN_DIRECTION)
   {
     setMotorPower(0);
-    stopMotorAt = 0;
   }
 }
 
@@ -131,7 +128,7 @@ void close()
 {
   Action a = {
     direction : CLOSE_DIRECTION,
-    duration : 85,
+    duration : CLOSE_RUN_MS,
     power : 100,
   };
   setMotor(&a);
@@ -355,10 +352,8 @@ void setup()
 
 void loop()
 {
-  unsigned long currentMillis = millis();
-  // We need to protect the motor from running too long if millis rolls over.
-  // so we just panic and stop the motor if millis < 10,000 (10 seconds, bootup time)
-  if (stopMotorAt > 0 && (stopMotorAt < currentMillis || currentMillis < 10000))
+  // Unsigned subtraction gives the correct elapsed time across millis() rollover.
+  if (motorRunning() && motorRunFor > 0 && millis() - motorStartedAt >= motorRunFor)
   {
     stop();
   }
