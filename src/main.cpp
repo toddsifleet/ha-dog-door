@@ -24,6 +24,10 @@ const unsigned long BUTTON_DEBOUNCE_MS = 50;
 // Closing unwinds the string and lets the door drop; there is no closed
 // limit switch, so the close runs for a fixed time.
 const unsigned long CLOSE_RUN_MS = 4250;
+// A close starts with the door resting on the open limit switch, and the
+// switch bounces as the door lifts off it. Ignore the switch for this long
+// after a close starts so that bounce cannot stop the motor.
+const unsigned long CLOSE_LIMIT_ARM_MS = 750;
 
 // Network timing. The WiFi and MQTT libraries block while they try to connect,
 // so keep each attempt short and space them out. The button is polled between
@@ -33,7 +37,7 @@ const unsigned long WIFI_JOIN_TIMEOUT_MS = 3000;   // max time WiFi.begin may bl
 const unsigned long WIFI_RETRY_INTERVAL_MS = 30000;
 const unsigned long MQTT_RETRY_INTERVAL_MS = 30000;
 
-unsigned long motorStartedAt = 0;
+volatile unsigned long motorStartedAt = 0;
 unsigned long motorRunFor = 0; // 0 = run until the limit switch
 unsigned long lastWifiAttemptAt = 0;
 unsigned long lastMqttAttemptAt = 0;
@@ -117,12 +121,21 @@ void stop()
   cover.setState(HACover::StateStopped);
 }
 
+// Fires on the rising edge of the open limit switch. Opening winds the
+// string up until the door trips the switch. If a close overruns, the
+// string winds up the other way and trips the same switch, so stop in that
+// direction too, once the arming delay has passed.
 void onLimitOpen()
 {
-  if (motorDirection == OPEN_DIRECTION)
+  if (!motorRunning())
   {
-    setMotorPower(0);
+    return;
   }
+  if (motorDirection == CLOSE_DIRECTION && millis() - motorStartedAt < CLOSE_LIMIT_ARM_MS)
+  {
+    return;
+  }
+  setMotorPower(0);
 }
 
 void close()
