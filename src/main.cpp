@@ -126,10 +126,16 @@ void setMotor(Action *a)
   setMotorPower(a->power);
 }
 
-void stop()
+void haltMotor()
 {
   motorRunFor = 0;
   setMotorPower(0);
+}
+
+// A stop requested from Home Assistant or the button.
+void stop()
+{
+  haltMotor();
   cover.setState(HACover::StateStopped);
 }
 
@@ -423,7 +429,7 @@ void loop()
   // Unsigned subtraction gives the correct elapsed time across millis() rollover.
   if (motorRunning() && motorRunFor > 0 && millis() - motorStartedAt >= motorRunFor)
   {
-    stop();
+    haltMotor(); // a completed close; the state publish reports it as closed
   }
 
   updateCloseLimitArming();
