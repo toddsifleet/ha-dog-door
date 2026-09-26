@@ -334,11 +334,16 @@ void setup()
   attachInterrupt(digitalPinToInterrupt(LIMIT_OPEN_PIN), onLimitOpen, RISING);
 
   cover.onCommand(onCoverCommand);
+  cover.setName(DEVICE_NAME);
 
   byte mac[WL_MAC_ADDR_LENGTH];
   WiFi.macAddress(mac);
-  device.setName("OakleyArduino");
+  device.setName(DEVICE_NAME);
   device.setUniqueId(mac, sizeof(mac));
+  // Publish online/offline so Home Assistant marks the door unavailable when
+  // the board drops off, instead of freezing on the last state it saw.
+  device.enableSharedAvailability();
+  device.enableLastWill();
 
   WiFi.setTimeout(WIFI_JOIN_TIMEOUT_MS);
   mqtt.onConnected(onMqttConnected);
