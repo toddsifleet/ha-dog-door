@@ -14,7 +14,6 @@ const int BRAKE_PIN = 9;
 const int DIRECTION_PIN = 12;
 const int LIMIT_OPEN_PIN = 2;
 const int PWM_PIN = 3;
-const int CURRENT_PIN = A0;
 const int BUTTON_PIN = 7;
 const unsigned long BUTTON_DEBOUNCE_MS = 50;
 
@@ -31,7 +30,9 @@ const unsigned long CLOSE_LIMIT_ARM_MS = 750;
 
 // Network timing. The WiFi and MQTT libraries block while they try to connect,
 // so keep each attempt short and space them out. The button is polled between
-// attempts, and no attempt is made while the motor is running.
+// attempts, and no attempt is made while the motor is running. A hardware
+// watchdog is deliberately not used: the RA4M1's maximum period is about
+// 5.6 s, shorter than the radio's 10 s TCP timeout.
 const unsigned long SERIAL_WAIT_MS = 2000;         // max wait for a debugging computer at boot
 const unsigned long WIFI_JOIN_TIMEOUT_MS = 3000;   // max time WiFi.begin may block
 const unsigned long WIFI_RETRY_INTERVAL_MS = 30000;
@@ -98,7 +99,8 @@ void setMotorPower(int power)
 
 void setMotor(Action *a)
 {
-  // NOTE: I'm not sure if we want to use the break.
+  // The brake shorts the motor windings. The gearbox cannot be back-driven,
+  // so it is only engaged here for completeness when power is zero.
   if (a->power == 0)
   {
     digitalWrite(BRAKE_PIN, HIGH);
@@ -143,22 +145,14 @@ void onLimitOpen()
 
 void close()
 {
-  Action a = {
-    direction : CLOSE_DIRECTION,
-    duration : CLOSE_RUN_MS,
-    power : 100,
-  };
+  Action a = {CLOSE_DIRECTION, CLOSE_RUN_MS, 100};
   setMotor(&a);
   cover.setState(HACover::StateClosing);
 }
 
 void open()
 {
-  Action a = {
-    direction : OPEN_DIRECTION,
-    duration : 0,
-    power : 255,
-  };
+  Action a = {OPEN_DIRECTION, 0, 255};
   setMotor(&a);
   cover.setState(HACover::StateOpening);
 }
