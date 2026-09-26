@@ -40,11 +40,12 @@ unsigned long lastMqttAttemptAt = 0;
 bool wifiWasConnected = false;
 
 // STATE OF MOTOR
+// These are written from the limit switch interrupt as well as the main
+// loop, so they must be volatile.
 volatile bool stateIsDirty = false;
+volatile int motorDirection = OPEN_DIRECTION;
+volatile int motorPower = 0;
 bool forceStatePublish = false;
-
-char motorDirection = OPEN_DIRECTION;
-unsigned char motorPower = 0;
 
 Bounce2::Button button;
 
