@@ -1,5 +1,6 @@
 #include <WiFiS3.h>
 #include <ArduinoHA.h>
+#include <Bounce2.h>
 #include <secrets.h>
 
 struct Action
@@ -15,7 +16,7 @@ const int LIMIT_OPEN_PIN = 2;
 const int PWM_PIN = 3;
 const int CURRENT_PIN = A0;
 const int BUTTON_PIN = 7;
-bool buttonRead = false;
+const unsigned long BUTTON_DEBOUNCE_MS = 50;
 
 #define OPEN_DIRECTION LOW
 #define CLOSE_DIRECTION HIGH
@@ -39,6 +40,8 @@ bool forceStatePublish = false;
 
 char motorDirection = OPEN_DIRECTION;
 unsigned char motorPower = 0;
+
+Bounce2::Button button;
 
 WiFiClient client;
 HADevice device;
@@ -223,17 +226,10 @@ void toggleDoor()
 
 void handleButton()
 {
-  if (digitalRead(BUTTON_PIN) == LOW)
+  button.update();
+  if (button.pressed())
   {
-    if (!buttonRead)
-    {
-      toggleDoor();
-      buttonRead = true;
-    }
-  }
-  else
-  {
-    buttonRead = false;
+    toggleDoor();
   }
 }
 
@@ -330,7 +326,9 @@ void setup()
   pinMode(PWM_PIN, OUTPUT);
   pinMode(BRAKE_PIN, OUTPUT);
   pinMode(LIMIT_OPEN_PIN, INPUT);
-  pinMode(BUTTON_PIN, INPUT_PULLUP);
+  button.attach(BUTTON_PIN, INPUT_PULLUP);
+  button.interval(BUTTON_DEBOUNCE_MS);
+  button.setPressedState(LOW);
   attachInterrupt(digitalPinToInterrupt(LIMIT_OPEN_PIN), onLimitOpen, RISING);
 
   cover.onCommand(onCoverCommand);
