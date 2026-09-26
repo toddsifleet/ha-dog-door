@@ -27,6 +27,8 @@ const unsigned long CLOSE_RUN_MS = 4250;
 // switch bounces as the door lifts off it. During a close the switch is only
 // honored once it has read released without interruption for this long.
 const unsigned long LIMIT_RELEASE_SETTLE_MS = 100;
+// Pause between stopping the motor and driving it the other way.
+const unsigned long REVERSE_DWELL_MS = 250;
 
 // Network timing. The WiFi and MQTT libraries block while they try to connect,
 // so keep each attempt short and space them out. The button is polled between
@@ -105,6 +107,14 @@ void setMotorPower(int power)
 
 void setMotor(Action *a)
 {
+  // Reversing a running motor straight into full power draws a large current
+  // spike through the shield. Stop it and let it spin down first.
+  if (motorRunning() && motorDirection != a->direction)
+  {
+    setMotorPower(0);
+    delay(REVERSE_DWELL_MS);
+  }
+
   // Disarm before the motor starts so the interrupt never sees a stale value.
   closeLimitArmed = false;
   limitReleased = false;
