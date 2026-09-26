@@ -24,9 +24,9 @@ const unsigned long BUTTON_DEBOUNCE_MS = 50;
 // limit switch, so the close runs for a fixed time.
 const unsigned long CLOSE_RUN_MS = 4250;
 // A close starts with the door resting on the open limit switch, and the
-// switch bounces as the door lifts off it. Ignore the switch for this long
-// after a close starts so that bounce cannot stop the motor.
-const unsigned long CLOSE_LIMIT_ARM_MS = 750;
+// switch bounces as the door lifts off it. During a close the switch is only
+// honored once it has read released without interruption for this long.
+const unsigned long LIMIT_RELEASE_SETTLE_MS = 100;
 
 // Network timing. The WiFi and MQTT libraries block while they try to connect,
 // so keep each attempt short and space them out. The button is polled between
@@ -40,7 +40,7 @@ const unsigned long MQTT_AFTER_WIFI_MS = 2000;     // let the connection settle 
 const unsigned long MQTT_RETRY_MIN_MS = 10000;     // matches the library's own reconnect interval
 const unsigned long MQTT_RETRY_MAX_MS = 30000;     // retries back off from MIN to MAX
 
-volatile unsigned long motorStartedAt = 0;
+unsigned long motorStartedAt = 0;
 unsigned long motorRunFor = 0; // 0 = run until the limit switch
 unsigned long lastWifiAttemptAt = 0;
 unsigned long lastMqttAttemptAt = 0;
@@ -55,6 +55,12 @@ volatile bool stateIsDirty = false;
 volatile int motorDirection = OPEN_DIRECTION;
 volatile int motorPower = 0;
 bool forceStatePublish = false;
+
+// Close-overrun protection. Set by updateCloseLimitArming() once the door has
+// left the limit switch, read by the limit switch interrupt.
+volatile bool closeLimitArmed = false;
+bool limitReleased = false;
+unsigned long limitReleasedAt = 0;
 
 Bounce2::Button button;
 
@@ -99,6 +105,9 @@ void setMotorPower(int power)
 
 void setMotor(Action *a)
 {
+  // Disarm before the motor starts so the interrupt never sees a stale value.
+  closeLimitArmed = false;
+  limitReleased = false;
   motorDirection = a->direction;
 
   digitalWrite(DIRECTION_PIN, motorDirection);
@@ -117,18 +126,44 @@ void stop()
 // Fires on the rising edge of the open limit switch. Opening winds the
 // string up until the door trips the switch. If a close overruns, the
 // string winds up the other way and trips the same switch, so stop in that
-// direction too, once the arming delay has passed.
+// direction too, once the door is known to have left the switch.
 void onLimitOpen()
 {
   if (!motorRunning())
   {
     return;
   }
-  if (motorDirection == CLOSE_DIRECTION && millis() - motorStartedAt < CLOSE_LIMIT_ARM_MS)
+  if (motorDirection == CLOSE_DIRECTION && !closeLimitArmed)
   {
     return;
   }
   setMotorPower(0);
+}
+
+// Arms the limit switch during a close once the switch has read released for
+// LIMIT_RELEASE_SETTLE_MS without interruption. Contact bounce while the door
+// lifts off restarts the wait, so the arming adapts to the door's speed.
+void updateCloseLimitArming()
+{
+  if (!motorRunning() || motorDirection != CLOSE_DIRECTION || closeLimitArmed)
+  {
+    return;
+  }
+  if (isOpen())
+  {
+    limitReleased = false;
+    return;
+  }
+  unsigned long now = millis();
+  if (!limitReleased)
+  {
+    limitReleased = true;
+    limitReleasedAt = now;
+  }
+  else if (now - limitReleasedAt >= LIMIT_RELEASE_SETTLE_MS)
+  {
+    closeLimitArmed = true;
+  }
 }
 
 void close()
@@ -381,6 +416,7 @@ void loop()
     stop();
   }
 
+  updateCloseLimitArming();
   handleButton();
   publishStateIfDirty();
 
