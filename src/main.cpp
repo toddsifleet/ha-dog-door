@@ -99,18 +99,6 @@ void setMotorPower(int power)
 
 void setMotor(Action *a)
 {
-  // The brake shorts the motor windings. The gearbox cannot be back-driven,
-  // so it is only engaged here for completeness when power is zero.
-  if (a->power == 0)
-  {
-    digitalWrite(BRAKE_PIN, HIGH);
-    return;
-  }
-  else
-  {
-    digitalWrite(BRAKE_PIN, LOW);
-  }
-
   motorDirection = a->direction;
 
   digitalWrite(DIRECTION_PIN, motorDirection);
@@ -355,6 +343,8 @@ void setup()
   pinMode(DIRECTION_PIN, OUTPUT);
   pinMode(PWM_PIN, OUTPUT);
   pinMode(BRAKE_PIN, OUTPUT);
+  // The gearbox cannot be back-driven, so the brake is never needed.
+  digitalWrite(BRAKE_PIN, LOW);
   pinMode(LIMIT_OPEN_PIN, INPUT);
   button.attach(BUTTON_PIN, INPUT_PULLUP);
   button.interval(BUTTON_DEBOUNCE_MS);
