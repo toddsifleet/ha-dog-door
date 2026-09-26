@@ -35,13 +35,17 @@ const unsigned long CLOSE_LIMIT_ARM_MS = 750;
 const unsigned long SERIAL_WAIT_MS = 2000;         // max wait for a debugging computer at boot
 const unsigned long WIFI_JOIN_TIMEOUT_MS = 3000;   // max time WiFi.begin may block
 const unsigned long WIFI_RETRY_INTERVAL_MS = 30000;
-const unsigned long MQTT_RETRY_INTERVAL_MS = 30000;
+const unsigned long MQTT_AFTER_WIFI_MS = 2000;     // let the connection settle before the first broker attempt
+const unsigned long MQTT_RETRY_MIN_MS = 10000;     // matches the library's own reconnect interval
+const unsigned long MQTT_RETRY_MAX_MS = 30000;     // retries back off from MIN to MAX
 
 volatile unsigned long motorStartedAt = 0;
 unsigned long motorRunFor = 0; // 0 = run until the limit switch
 unsigned long lastWifiAttemptAt = 0;
 unsigned long lastMqttAttemptAt = 0;
-bool wifiWasConnected = false;
+unsigned long mqttRetryInterval = MQTT_RETRY_MIN_MS;
+bool wifiConnected = false; // read once per loop pass by maintainWifi()
+unsigned long wifiConnectedSince = 0;
 
 // STATE OF MOTOR
 // These are written from the limit switch interrupt as well as the main
@@ -201,6 +205,7 @@ void onMqttConnected()
   // Home Assistant may have restarted or missed updates; resend the current state.
   stateIsDirty = true;
   forceStatePublish = true;
+  mqttRetryInterval = MQTT_RETRY_MIN_MS;
 }
 
 void onMqttDisconnected()
@@ -261,11 +266,12 @@ void publishStateIfDirty()
 void maintainWifi()
 {
   bool connected = WiFi.status() == WL_CONNECTED;
-  if (connected != wifiWasConnected)
+  if (connected != wifiConnected)
   {
-    wifiWasConnected = connected;
+    wifiConnected = connected;
     if (connected)
     {
+      wifiConnectedSince = millis();
       Serial.print("WiFi: connected, IP ");
       Serial.println(WiFi.localIP());
     }
@@ -294,10 +300,11 @@ void maintainWifi()
 }
 
 // Services the MQTT client when connected, and reconnects on the same
-// rate-limited, motor-aware terms as WiFi.
+// motor-aware terms as WiFi. A failed TCP connect blocks for the radio's
+// own timeout (about 10 s), so attempts are spaced out with a backoff.
 void maintainMqtt()
 {
-  if (WiFi.status() != WL_CONNECTED)
+  if (!wifiConnected)
   {
     return;
   }
@@ -311,14 +318,26 @@ void maintainMqtt()
     return;
   }
   unsigned long now = millis();
-  if (lastMqttAttemptAt != 0 && now - lastMqttAttemptAt < MQTT_RETRY_INTERVAL_MS)
+  if (now - wifiConnectedSince < MQTT_AFTER_WIFI_MS)
   {
     return;
+  }
+  if (lastMqttAttemptAt != 0 && now - lastMqttAttemptAt < mqttRetryInterval)
+  {
+    return;
+  }
+  if (WiFi.localIP() == IPAddress((uint32_t)0))
+  {
+    return; // associated but no address yet
   }
   lastMqttAttemptAt = now;
   Serial.print("MQTT: connecting to ");
   Serial.println(MQTT_IP);
   mqtt.loop(); // triggers the library's connect attempt
+  if (!mqtt.isConnected())
+  {
+    mqttRetryInterval = min(mqttRetryInterval * 2, MQTT_RETRY_MAX_MS);
+  }
 }
 
 void setup()
