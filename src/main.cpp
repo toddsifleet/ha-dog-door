@@ -248,10 +248,17 @@ void publishStateIfDirty()
   {
     return;
   }
+  // Clear the flag before reading the state. If the limit interrupt changes
+  // the state during the publish, it sets the flag again and the new state
+  // goes out on the next pass instead of being lost.
+  stateIsDirty = false;
   if (cover.setState(getState(), forceStatePublish))
   {
-    stateIsDirty = false;
     forceStatePublish = false;
+  }
+  else
+  {
+    stateIsDirty = true;
   }
 }
 
