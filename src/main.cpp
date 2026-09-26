@@ -57,8 +57,7 @@ WiFiClient client;
 HADevice device;
 HAMqtt mqtt(client, device);
 
-// "myCover" is unique ID of the cover. You should define your own ID.
-HACover cover(UNIQUE_ID, HACover::PositionFeature);
+HACover cover(UNIQUE_ID);
 
 bool isOpen()
 {
